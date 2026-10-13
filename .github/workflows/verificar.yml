@@ -1,0 +1,47 @@
+name: Verificar experimento
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  ejecutar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements.txt
+      - name: Ejecutar experimento
+        run: python main.py
+      - name: Verificar resultados
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          data = json.loads(Path("resultados/resumen.json").read_text(encoding="utf-8"))
+          metrics = pd.read_csv("resultados/metricas.csv")
+          assert data["registros_originales"] == 6192
+          assert data["registros_limpios"] == 6191
+          assert data["anomalias_etiquetadas"] == 120
+          assert data["registros_train"] == 4333
+          assert data["registros_test"] == 1858
+          assert data["anomalias_test"] == 38
+          assert len(metrics) == 3
+          assert metrics["f1"].between(0, 1).all()
+          for f in ["graficos/comparacion_modelos.png",
+                    "graficos/anomalias_por_mes.png",
+                    "graficos/trafico_y_anomalias.png"]:
+              assert Path(f).exists(), f
+          print(metrics.to_string(index=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resultados-y-graficos
+          path: |
+            resultados/
+            graficos/
