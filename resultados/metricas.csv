@@ -1,0 +1,4 @@
+metodo,umbral,TP,FP,FN,TN,precision,recall,f1,episodios_detectados,episodios_totales
+Umbral fijo,131.87020000,18,12,20,1808,0.60000000,0.47368421,0.52941176,3,5
+Patrón horario,49.57192778,21,17,17,1803,0.55263158,0.55263158,0.55263158,4,5
+Isolation Forest,0.62075685,23,19,15,1801,0.54761905,0.60526316,0.57500000,5,5

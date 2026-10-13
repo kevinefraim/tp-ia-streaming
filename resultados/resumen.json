@@ -1,0 +1,16 @@
+{
+  "registros_originales": 6192,
+  "duplicados": 1,
+  "registros_limpios": 6191,
+  "anomalias_etiquetadas": 120,
+  "registros_train": 4333,
+  "registros_test": 1858,
+  "anomalias_train": 82,
+  "anomalias_test": 38,
+  "inicio_test": "2018-04-30 14:00:00+00:00",
+  "modelo": "sklearn.ensemble.IsolationForest",
+  "n_estimators": 100,
+  "max_samples": 256,
+  "random_state": 42,
+  "percentil_umbral_train": 98
+}
