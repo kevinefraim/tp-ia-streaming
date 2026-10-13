@@ -1,78 +1,79 @@
-# Detección de anomalías en tráfico de servicios backend
+# Detección de patrones anómalos de audiencia en transmisiones en vivo
 
-Trabajo práctico integrador de **Inteligencia Artificial** — Universidad de Palermo.
+**Trabajo práctico integrador — Inteligencia Artificial — Universidad de Palermo**
 
-Este repositorio contiene una validación experimental de detección de anomalías en una serie temporal de tasa de solicitudes entrantes a una API. Se estudia su posible **aplicación** a plataformas de streaming: **los datos utilizados no proceden de una plataforma de streaming**.
+## Pregunta de investigación
 
-## Dataset
+¿Puede una técnica de aprendizaje automático no supervisado identificar **alteraciones inusuales en la evolución de espectadores concurrentes** que justifiquen revisar una transmisión por posible manipulación de audiencia (*viewbotting*)?
 
-- **Origen:** Microsoft, [Cloud Monitoring Dataset](https://github.com/microsoft/cloud-monitoring-dataset).
-- **Archivo original:** [ecommerce-api-incoming-rps/api-01.csv](https://github.com/microsoft/cloud-monitoring-dataset/blob/master/data/ecommerce-api-incoming-rps/api-01.csv).
-- **Copia incluida:** `data/api-01.csv`.
-- **Campos:** `TimeStamp` (fecha UTC), `Value` (tasa de solicitudes entrantes), `Label` (anomalía de referencia: 0/1).
-- Las etiquetas se utilizan **solo para evaluar**, no para entrenar el modelo no supervisado.
-- **Licencia del dataset:** MIT. Aviso original en `data/LICENSE_Microsoft.txt`. Se conserva la atribución a Microsoft.
+**Este trabajo NO detecta ni confirma bots reales.** Solo propone un sistema de alertas, estudia series temporales reales y prueba escenarios de perturbación **sintética**. No se recomienda aplicar sanciones a creadores basándose únicamente en un puntaje de anomalía.
 
-## Cómo ejecutarlo
+## Datos y procedencia
 
-Requiere Python 3.10 o superior. Desde la carpeta raíz:
+Se utiliza **YTLive: A Dataset of Real-World YouTube Live Streaming Sessions**, un conjunto público de audiencia de YouTube Live publicado por Mozhganfar y colaboradores (NOMS 2026).
+
+- [Repositorio original YTLive](https://github.com/ghalandar/YTLive).
+- [Archivo de espectadores de origen (`viewers.csv`)](https://github.com/ghalandar/YTLive/blob/a9ce70a470ddfdd52619a4f110bd33a8fcc1d5df/viewers.csv).
+- Versión específica utilizada: [commit `a9ce70a`](https://github.com/ghalandar/YTLive/commit/a9ce70a470ddfdd52619a4f110bd33a8fcc1d5df).
+- Observaciones disponibles: **507.290** mediciones, agrupadas en **12.156** transmisiones (resultado de procesar el archivo).
+- Variables de origen: momento de medición (`Timestamp` o primera columna del archivo), identificador seudonimizado de transmisión (hash en encabezado) y espectadores concurrentes.
+- **No hay etiquetas que identifiquen transmisiones con viewbotting ni datos de sesiones individuales.**
+- Como el repositorio fuente **no especifica una licencia de redistribución**, **no republicamos su CSV**. El programa descarga el archivo público directamente de la versión fijada; así los datos siguen siendo accesibles mediante Git, con atribución y sin crear una copia en nuestro repositorio.
+
+## Ejecutar
+
+Requiere Python 3.11 e Internet solo para la primera descarga:
 
 ```bash
 python -m pip install -r requirements.txt
 python main.py
 ```
 
-No es necesario descargar ningún archivo adicional, utilizar AWS ni configurar una API: el CSV está dentro del repositorio.
+El programa crea un caché local ignorado por Git en `data/origen/viewers.csv`, calcula el modelo y genera gráficos y resultados. No hacen falta claves de YouTube ni acceso a servidores de streaming.
 
-El programa procesa los datos, calcula las tres alternativas de detección y crea:
+**Los mismos archivos de salida ya están versionados** y pueden consultarse sin ejecutar nada:
 
-- `resultados/metricas.csv`: matriz de confusión y métricas de los métodos.
-- `resultados/resumen.json`: cantidad de observaciones, limpieza y partición.
-- `graficos/comparacion_modelos.png`: precisión, recall y F1-score.
-- `graficos/trafico_y_anomalias.png`: fragmento de tráfico con etiquetas reales y anomalías detectadas.
-- `graficos/anomalias_por_mes.png`: distribución mensual de registros anómalos.
+- [Métricas generales](resultados/metricas.csv)
+- [Desglose por escenario](resultados/escenarios.csv)
+- [Información del dataset y configuración](resultados/resumen.json)
+- [Ejemplo de alteración de audiencia](graficos/ejemplo_escenario_simulado.png)
+- [Comparación de los métodos](graficos/comparacion_metodos.png)
+- [Resultados por tipo de simulación](graficos/escenarios_simulados.png)
 
-Estos archivos se vuelven a generar en cada ejecución. El código también imprime los resultados por consola.
+![Comparación de métodos en escenarios sintéticos](graficos/comparacion_metodos.png)
 
-Los **PNG y archivos de métricas también quedan versionados en este repositorio**. Se pueden consultar sin ejecutar nada:
+## Diseño del experimento
 
-- [Tráfico y anomalías](graficos/trafico_y_anomalias.png)
-- [Comparación de los métodos](graficos/comparacion_modelos.png)
-- [Anomalías etiquetadas por mes](graficos/anomalias_por_mes.png)
-- [Resultados numéricos](resultados/metricas.csv)
+1. Descargar el archivo `viewers.csv` desde un **commit fijo** del repositorio YTLive, sin modificarlo.
+2. Convertir el formato original ancho (transmisiones como columnas) en observaciones `(transmisión, fecha, espectadores)`; eliminar registros inválidos y duplicados de fecha.
+3. Separar tramos continuos de mediciones y construir ventanas de **ocho observaciones** (intervalos aproximados de cinco minutos; ventana de ~35 minutos entre extremos). Las celdas vacías **no se consideran cero espectadores**.
+4. Seleccionar de forma reproducible **180 transmisiones elegibles** y dividir las transmisiones (no las ventanas) **70 % entrenamiento / 30 % prueba**, evitando mezclar ventanas de un mismo live en ambas partes.
+5. Construir siete características por ventana: volumen mediano de audiencia, máximo salto hacia arriba, máximo salto hacia abajo, rango relativo, dispersión relativa, diferencia entre inicio y final, y cambio neto relativo.
+6. Entrenar `IsolationForest` sin etiquetas, con 150 árboles, submuestras de 256 ventanas (o menos si no alcanzan) y semilla 42.
+7. Comparar con una regla de referencia que utiliza solamente el **máximo salto positivo relativo**.
+8. Definir el umbral de cada método usando el **percentil 95 de las puntuaciones del conjunto de entrenamiento**, antes de mirar los datos de prueba.
+9. Para cada ventana real de prueba generar una versión **alterada artificialmente** de tres formas, según una asignación determinística: **escalón** (subida sostenida), **pulso** (subida seguida por baja) y **rampa** (subida progresiva). La magnitud se elige mediante una semilla conocida. Son perturbaciones matemáticas, **no tráfico generado por bots**.
+10. Evaluar por separado:
+    - **Tasa de alertas sobre ventanas reales sin etiquetas**. No equivale a tasa de falsos positivos, ya que nadie certificó que esas transmisiones sean legítimas.
+    - **Porcentaje detectado de escenarios sintéticos**, total y por tipo. Sirve para comparar sensibilidad frente a las perturbaciones artificiales, **no para estimar recall de bots reales**.
 
-![Comparación experimental de los métodos](graficos/comparacion_modelos.png)
+No calculamos precisión, F1 ni exactitud de detección de bots reales porque **no tenemos verdad terreno**. Cualquier métrica en este experimento debe interpretarse solo en el ámbito delimitado anteriormente.
 
+## Limitaciones
 
-## Método: qué hace el código
+- Se trabaja con espectadores agregados: sin IP, sesiones, comportamiento de cuentas ni actividad de chat.
+- Un pico puede ser legítimo: viralidad, promociones, coberturas de eventos y cambios de fuentes de tráfico. La detección nunca es prueba de fraude.
+- La selección de 180 transmisiones es una **muestra de conveniencia reproducible**; los resultados no pueden generalizarse automáticamente a todas las plataformas.
+- Las perturbaciones sintéticas no reproducen necesariamente estrategias reales de evasión.
+- El experimento es **offline** y no incluye despliegue productivo, panel de alertas o revisión operativa.
 
-1. Lee `data/api-01.csv` y comprueba los campos, valores y etiquetas.
-2. Convierte las fechas a UTC, ordena las observaciones y consolida registros con una misma fecha: promedio de `Value` y máximo de `Label`.
-3. Reserva los **primeros 70 %** de los registros para construir los criterios de detección y los **últimos 30 %** para evaluar (partición cronológica).
-4. Calcula la mediana histórica de `Value` para cada hora UTC **solo con el tramo inicial**.
-5. Compara tres métodos: **umbral fijo de solicitudes**, **desviación absoluta frente a la mediana horaria** y **Isolation Forest** (scikit-learn).
-6. El modelo usa seis características: valor, desviación horaria, diferencia con la medición anterior, diferencia con 24 registros anteriores y hora codificada con seno/coseno.
-7. A cada método se le asigna un umbral definido por el **percentil 98 de su puntuación en la partición inicial**, sin mirar las etiquetas de prueba.
-8. Compara las predicciones con `Label` mediante precisión, recall, F1, matriz de confusión y episodios detectados.
+## Trabajos relacionados
 
-La configuración del modelo incluye `n_estimators=100`, `max_samples=256` y `random_state=42`. Las métricas pueden diferir de experimentos previos realizados con otras implementaciones o parámetros; se deben citar los resultados emitidos por **este mismo script**.
+- Shah, N. (2017). *FLOCK: Combating astroturfing on livestreaming platforms*. Proceedings of the 26th International Conference on World Wide Web, 1083–1091. https://doi.org/10.1145/3038912.3052617
+- Mozhganfar, M., Jamshidi, P., Aghamiri, S. A., Ghasemi, M., Dolati, M., Tashtarian, F., Khonsari, A., & Timmerer, C. (2026). *YTLive: A dataset of real-world YouTube live streaming sessions*. IEEE/IFIP NOMS. https://arxiv.org/abs/2510.24769
+- Liu, F. T., Ting, K. M., & Zhou, Z.-H. (2008). Isolation forest. *2008 Eighth IEEE International Conference on Data Mining*, 413–422. https://doi.org/10.1109/ICDM.2008.17
+- Twitch. (s. f.). [*How to handle viewership botting and fake engagement*](https://help.twitch.tv/s/article/how-to-handle-view-follow-bots?language=en_US).
 
-## Qué significan los resultados
+## Aclaración
 
-- **Verdadero positivo:** el modelo marcó anomalía y la etiqueta dice 1.
-- **Falso positivo:** emitió una alerta sobre una lectura etiquetada como normal.
-- **Falso negativo:** una lectura anómala no fue detectada.
-- **Precisión:** TP / (TP + FP).
-- **Recall:** TP / (TP + FN).
-- **F1:** media armónica de precisión y recall.
-- **Episodio detectado:** al menos una lectura del bloque continuo etiquetado como anomalía fue identificada.
-
-La comparación es **exploratoria**, utiliza una sola serie histórica y no prueba que el sistema prediga incidentes ni que sirva sin ajustes en producción. La tasa de solicitudes, por sí sola, no permite inferir el estado de reproducción de video.
-
-## Referencias
-
-- [Microsoft, Cloud Monitoring Dataset](https://github.com/microsoft/cloud-monitoring-dataset).
-- Liu, Ting y Zhou (2008), *Isolation Forest*. [DOI: 10.1109/ICDM.2008.17](https://doi.org/10.1109/ICDM.2008.17).
-- [scikit-learn, IsolationForest](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.IsolationForest.html).
-- [Datadog, Anomaly Monitor](https://docs.datadoghq.com/monitors/types/anomaly/).
-- [Amazon CloudWatch, Anomaly Detection](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Anomaly_Detection.html).
+El enfoque de este repositorio es académico y explicable: su producto es una **lista de alertas para revisión humana**, no un clasificador determinista de espectadores fraudulentos.

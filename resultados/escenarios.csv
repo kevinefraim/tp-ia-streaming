@@ -1,0 +1,7 @@
+metodo,escenario,escenarios_simulados,detecciones_simuladas,recall_escenarios_simulados
+Umbral por salto,escalon,141,141,1.000000
+Umbral por salto,pulso,140,140,1.000000
+Umbral por salto,rampa,140,4,0.028571
+Isolation Forest,escalon,141,139,0.985816
+Isolation Forest,pulso,140,139,0.992857
+Isolation Forest,rampa,140,131,0.935714
