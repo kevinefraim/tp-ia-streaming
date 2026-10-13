@@ -7,6 +7,10 @@ on:
       - 'resultados/**'
   workflow_dispatch:
 
+concurrency:
+  group: audiencia-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   evaluar:
     runs-on: ubuntu-latest
@@ -46,6 +50,7 @@ jobs:
           git add -f resultados/metricas.csv resultados/escenarios.csv resultados/resumen.json graficos/ejemplo_escenario_simulado.png graficos/comparacion_metodos.png graficos/escenarios_simulados.png
           if ! git diff --cached --quiet; then
             git commit -m "Resultados experimentales y gráficos reproducibles"
+            git pull --rebase origin ${GITHUB_REF_NAME}
             git push origin HEAD:${GITHUB_REF_NAME}
           fi
       - uses: actions/upload-artifact@v4
