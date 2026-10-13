@@ -1,7 +1,10 @@
 name: Evaluar audiencia y escenarios sintéticos
 on:
   push:
-    branches: [viewbotting-experimento]
+    branches: [viewbotting-experimento, main]
+    paths-ignore:
+      - 'graficos/**'
+      - 'resultados/**'
   workflow_dispatch:
 
 jobs:
@@ -17,7 +20,7 @@ jobs:
           cache: pip
       - run: python -m pip install -r requirements.txt
       - name: Descargar, evaluar y graficar
-        run: python experimento_audiencia.py
+        run: python main.py
       - name: Validar métricas
         run: |
           python - <<'PY'
@@ -29,20 +32,21 @@ jobs:
           assert j["etiquetas_bots_reales"] is False
           assert j["ventanas_test"] > 0 and j["ventanas_train"] > 0
           assert "recall_escenarios_simulados" in m
+          assert (Path("resultados")/"escenarios.csv").is_file()
           assert m["recall_escenarios_simulados"].between(0,1).all()
           for n in ("ejemplo_escenario_simulado.png","comparacion_metodos.png","escenarios_simulados.png"):
               assert (Path("graficos")/n).is_file()
           print(m.to_string(index=False))
           PY
       - name: Publicar solamente resultados derivados y gráficos
-        if: github.ref == 'refs/heads/viewbotting-experimento'
+        if: github.ref == 'refs/heads/viewbotting-experimento' || github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f resultados/metricas.csv resultados/resumen.json graficos/*.png
+          git add -f resultados/metricas.csv resultados/escenarios.csv resultados/resumen.json graficos/ejemplo_escenario_simulado.png graficos/comparacion_metodos.png graficos/escenarios_simulados.png
           if ! git diff --cached --quiet; then
             git commit -m "Resultados experimentales y gráficos reproducibles"
-            git push origin HEAD:viewbotting-experimento
+            git push origin HEAD:${GITHUB_REF_NAME}
           fi
       - uses: actions/upload-artifact@v4
         with:
