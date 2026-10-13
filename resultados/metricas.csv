@@ -1,4 +1,9 @@
-metodo,umbral,TP,FP,FN,TN,precision,recall,f1,episodios_detectados,episodios_totales
-Umbral fijo,131.87020000,18,12,20,1808,0.60000000,0.47368421,0.52941176,3,5
-Patrón horario,49.57192778,21,17,17,1803,0.55263158,0.55263158,0.55263158,4,5
-Isolation Forest,0.62075685,23,19,15,1801,0.54761905,0.60526316,0.57500000,5,5
+metodo,umbral,ventanas_reales_sin_etiqueta,alertas_reales,tasa_alertas_reales,escenarios_simulados,detecciones_simuladas,recall_escenarios_simulados,aumento_alertas_pares,escenario
+Umbral por salto,0.274890,421.000000,5.000000,0.011876,421,285,0.676960,280.000000,
+Umbral por salto,,,,,141,141,1.000000,,escalon
+Umbral por salto,,,,,140,140,1.000000,,pulso
+Umbral por salto,,,,,140,4,0.028571,,rampa
+Isolation Forest,0.557444,421.000000,15.000000,0.035629,421,409,0.971496,395.000000,
+Isolation Forest,,,,,141,139,0.985816,,escalon
+Isolation Forest,,,,,140,139,0.992857,,pulso
+Isolation Forest,,,,,140,131,0.935714,,rampa
