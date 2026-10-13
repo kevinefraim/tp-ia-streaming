@@ -34,6 +34,16 @@ El programa procesa los datos, calcula las tres alternativas de detección y cre
 
 Estos archivos se vuelven a generar en cada ejecución. El código también imprime los resultados por consola.
 
+Los **PNG y archivos de métricas también quedan versionados en este repositorio**. Se pueden consultar sin ejecutar nada:
+
+- [Tráfico y anomalías](graficos/trafico_y_anomalias.png)
+- [Comparación de los métodos](graficos/comparacion_modelos.png)
+- [Anomalías etiquetadas por mes](graficos/anomalias_por_mes.png)
+- [Resultados numéricos](resultados/metricas.csv)
+
+![Comparación experimental de los métodos](graficos/comparacion_modelos.png)
+
+
 ## Método: qué hace el código
 
 1. Lee `data/api-01.csv` y comprueba los campos, valores y etiquetas.
