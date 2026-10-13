@@ -49,8 +49,9 @@ def read_observations(path: Path) -> pd.DataFrame:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=FutureWarning, message=".*stack.*")
         for chunk in pd.read_csv(path, chunksize=384, low_memory=False):
+            # La primera columna puede representar el índice sin encabezado explícito.
             if "Timestamp" not in chunk:
-                raise ValueError("YTLive cambió su formato: falta Timestamp")
+                chunk = chunk.rename(columns={chunk.columns[0]: "Timestamp"})
             chunk["Timestamp"] = pd.to_datetime(chunk["Timestamp"], utc=True, errors="coerce")
             s = chunk.set_index("Timestamp").stack(dropna=True)
             s.index.names = ["fecha", "stream_id"]
