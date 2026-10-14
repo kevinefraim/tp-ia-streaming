@@ -7,6 +7,7 @@
   "streams_test": 55,
   "ventanas_train": 815,
   "ventanas_test": 421,
+  "particion_por_stream_sin_solapamiento": true,
   "mediciones_por_ventana": 8,
   "criterio_continuidad_min_seg": 120,
   "criterio_continuidad_max_seg": 540,
@@ -17,5 +18,6 @@
   "tipo_experimento": "Perturbaciones sintéticas sobre ventanas de audiencia real",
   "semilla": 42,
   "percentil_umbral_train": 95,
+  "advertencia_sobre_recall": "Es sensibilidad a patrones sintéticos, no recall de viewbotting",
   "nota": "La tasa de alertas en datos reales NO es tasa de falsos positivos: no hay etiquetas de bots."
 }
