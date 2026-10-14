@@ -24,23 +24,45 @@ OUTPUT = ROOT / "resultados"
 FIG = ROOT / "graficos"
 SOURCE = "https://raw.githubusercontent.com/ghalandar/YTLive/a9ce70a470ddfdd52619a4f110bd33a8fcc1d5df/viewers.csv"
 SEED = 42
+# Suma SHA-256 del archivo original de YTLive fijado en el commit indicado.
+# Evita trabajar silenciosamente con archivos locales incompletos o modificados.
+EXPECTED_SHA256 = "ceaf80834da37d8dbaea04386d55034f044458af9f95f20d7b37a02d9778b3e5"
 WINDOW = 8                  # 8 mediciones a intervalos ~5 min
 TARGET_STREAMS = 180
 TRAIN_SHARE = .70
 QUANTILE = .95
 
 
+def file_sha256(path: Path) -> str:
+    """Calcula el hash sin cargar el archivo completo en memoria."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def download_source() -> Path:
+    """Obtiene una copia local y verifica su integridad contra la fuente fijada."""
     CACHE.mkdir(exist_ok=True, parents=True)
     out = CACHE / "viewers.csv"
-    if out.is_file() and out.stat().st_size > 10_000_000:
+    if out.is_file() and file_sha256(out) == EXPECTED_SHA256:
         return out
+
+    partial = CACHE / "viewers.csv.part"
     req = Request(SOURCE, headers={"User-Agent": "TP-IA-university-research/1.0"})
-    with urlopen(req, timeout=120) as f, out.open("wb") as w:
-        while block := f.read(1024 * 1024):
-            w.write(block)
-    if out.stat().st_size < 10_000_000:
-        raise RuntimeError("Descarga incompleta de YTLive")
+    try:
+        with urlopen(req, timeout=120) as stream, partial.open("wb") as target:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                target.write(block)
+        actual = file_sha256(partial)
+        if actual != EXPECTED_SHA256:
+            raise RuntimeError(
+                f"YTLive no coincide con la versión auditada. SHA-256: {actual}"
+            )
+        partial.replace(out)
+    finally:
+        partial.unlink(missing_ok=True)
     return out
 
 
@@ -107,6 +129,7 @@ def select_windows(obs: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, dict]:
         "streams_test": len(chosen) - len(train_ids),
         "ventanas_train": len(train),
         "ventanas_test": len(test),
+        "particion_por_stream_sin_solapamiento": True,
         "mediciones_por_ventana": WINDOW,
         "criterio_continuidad_min_seg": 120,
         "criterio_continuidad_max_seg": 540,
@@ -162,13 +185,11 @@ def report(tr: np.ndarray, real: np.ndarray, injected: np.ndarray,
                             -model.score_samples(fr),
                             -model.score_samples(fs)),
     }
-    rows, predictions, saved_scores = [], {}, {}
+    rows = []
     for method, (sc_tr, sc_real, sc_sim) in scores.items():
         cutoff = float(np.quantile(sc_tr, QUANTILE))
         alert_real = sc_real > cutoff
         alert_sim = sc_sim > cutoff
-        predictions[method] = (alert_real, alert_sim)
-        saved_scores[method] = (sc_real, sc_sim)
         rows.append({"metodo": method, "umbral": cutoff,
                      "ventanas_reales_sin_etiqueta": len(real),
                      "alertas_reales": int(alert_real.sum()),
@@ -183,11 +204,11 @@ def report(tr: np.ndarray, real: np.ndarray, injected: np.ndarray,
                          "escenarios_simulados":int(take.sum()),
                          "detecciones_simuladas":int(alert_sim[take].sum()),
                          "recall_escenarios_simulados":float(alert_sim[take].mean())})
-    return pd.DataFrame(rows), predictions, saved_scores
+    return pd.DataFrame(rows)
 
 
 def plots(real: np.ndarray, simulated: np.ndarray, types: np.ndarray,
-          metrics: pd.DataFrame, scores: dict) -> None:
+          metrics: pd.DataFrame) -> None:
     FIG.mkdir(parents=True, exist_ok=True)
     # Primer caso escalón por índice predefinido (sin optimizar la elección).
     i = int(np.flatnonzero(types == "escalon")[0])
@@ -244,8 +265,8 @@ def main() -> None:
     obs = read_observations(path)
     train,test,detail = select_windows(obs)
     injected,kinds = inject_attacks(test)
-    table,pred,scores=report(train,test,injected,kinds)
-    plots(test,injected,kinds,table,scores)
+    table = report(train, test, injected, kinds)
+    plots(test, injected, kinds, table)
     OUTPUT.mkdir(parents=True,exist_ok=True)
     summary = table[table["escenario"].isna()].drop(columns=["escenario"])
     cases = table[table["escenario"].notna()][["metodo", "escenario",
@@ -254,10 +275,11 @@ def main() -> None:
     cases.to_csv(OUTPUT/"escenarios.csv",index=False,float_format="%.6f")
     detail.update({"dataset":"YTLive, Mozhganfar et al. (2026)",
                    "origen_csv":SOURCE,
-                   "sha256_csv":hashlib.sha256(path.read_bytes()).hexdigest(),
+                   "sha256_csv":file_sha256(path),
                    "etiquetas_bots_reales":False,
                    "tipo_experimento":"Perturbaciones sintéticas sobre ventanas de audiencia real",
                    "semilla":SEED,"percentil_umbral_train":95,
+                   "advertencia_sobre_recall":"Es sensibilidad a patrones sintéticos, no recall de viewbotting",
                    "nota":"La tasa de alertas en datos reales NO es tasa de falsos positivos: no hay etiquetas de bots."})
     (OUTPUT/"resumen.json").write_text(json.dumps(detail,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     print(json.dumps(detail,ensure_ascii=False,indent=2))
