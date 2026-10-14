@@ -1,7 +1,7 @@
 name: Evaluar audiencia y escenarios sintéticos
 on:
   push:
-    branches: [viewbotting-experimento, main]
+    branches: [refinamiento-academico, main]
     paths-ignore:
       - 'graficos/**'
       - 'resultados/**'
@@ -47,7 +47,7 @@ jobs:
           print(m.to_string(index=False))
           PY
       - name: Publicar solamente resultados derivados y gráficos
-        if: github.ref == 'refs/heads/viewbotting-experimento' || github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
