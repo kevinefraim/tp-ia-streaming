@@ -22,11 +22,12 @@ Se utiliza **YTLive: A Dataset of Real-World YouTube Live Streaming Sessions**, 
 
 ## Ejecutar
 
-Requiere Python 3.11 e Internet solo para la primera descarga:
+Requiere Python 3.11 e Internet durante la descarga inicial. El programa verifica el archivo obtenido mediante SHA-256 y, en ejecuciones posteriores, reutiliza el caché únicamente si coincide con la versión original auditada:
 
 ```bash
 python -m pip install -r requirements.txt
 python main.py
+python -m unittest discover -s tests -v
 ```
 
 El programa crea un caché local ignorado por Git en `data/origen/viewers.csv`, calcula el modelo y genera gráficos y resultados. No hacen falta claves de YouTube ni acceso a servidores de streaming.
@@ -41,6 +42,33 @@ El programa crea un caché local ignorado por Git en `data/origen/viewers.csv`, 
 - [Resultados por tipo de simulación](graficos/escenarios_simulados.png)
 
 ![Comparación de métodos en escenarios sintéticos](graficos/comparacion_metodos.png)
+
+## Resultados de la ejecución verificada
+
+Se analizaron **421 ventanas reales sin etiquetas** (55 transmisiones de prueba), y para cada una se produjo una versión alterada de forma sintética.
+
+| Indicador | Regla por salto | Isolation Forest |
+|---|---:|---:|
+| Ventanas reales con alerta (de 421) | 5 (1,2 %) | 15 (3,6 %) |
+| Perturbaciones sintéticas señaladas (de 421) | 285 (67,7 %) | 409 (97,1 %) |
+| Nuevas alertas respecto de la ventana sin alterar (de 421) | 280 (66,5 %) | 395 (93,8 %) |
+| Escalón artificial (de 141) | 141 | 139 |
+| Pulso artificial (de 140) | 140 | 139 |
+| Rampa artificial (de 140) | 4 | 131 |
+
+**Interpretación:** el porcentaje del 97,1 % solo expresa sensibilidad a las perturbaciones sintéticas de este protocolo. Las ventanas originales no están verificadas como libres de manipulación: por eso el 3,6 % **no es una tasa de falsos positivos**. Tampoco existe información para calcular precisión, F1 o recall de bots reales. La tercera fila (análisis por pares) distingue una alerta nueva de otra que ya existía antes de introducir la perturbación.
+
+Estos valores están respaldados por [métricas CSV](resultados/metricas.csv), [detalle por escenario](resultados/escenarios.csv) y una [ejecución de GitHub Actions](https://github.com/kevinefraim/tp-ia-streaming/actions). No son conclusiones transferibles directamente a entornos productivos.
+
+## Reproducibilidad y calidad
+
+- Origen fijado por commit `a9ce70a470ddfdd52619a4f110bd33a8fcc1d5df`.
+- **SHA-256 verificado**: `ceaf80834da37d8dbaea04386d55034f044458af9f95f20d7b37a02d9778b3e5`.
+- Las particiones de entrenamiento y prueba se realizan **por transmisión**, para evitar compartir ventanas del mismo live.
+- Semilla 42 para la muestra y el modelo; semilla 59 para la intensidad de las perturbaciones.
+- Umbrales calibrados exclusivamente con ventanas de entrenamiento (percentil 95).
+- Incluye [pruebas unitarias](tests/test_experimento.py) sobre características, simulaciones deterministas y métricas, ejecutadas automáticamente en CI.
+- La intensidad artificial se elige entre 80 % y 220 % de la mediana de espectadores (con piso de 30); son casos deliberadamente marcados y pueden resultar más fáciles de identificar que el fraude real.
 
 ## Diseño del experimento
 
