@@ -23,6 +23,8 @@ jobs:
           python-version: '3.11'
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Pruebas unitarias independientes del dataset
+        run: python -m unittest discover -s tests -v
       - name: Descargar, evaluar y graficar
         run: python main.py
       - name: Validar métricas
@@ -34,6 +36,8 @@ jobs:
           j=json.loads(Path("resultados/resumen.json").read_text())
           m=pd.read_csv("resultados/metricas.csv")
           assert j["etiquetas_bots_reales"] is False
+          assert j["sha256_csv"] == "ceaf80834da37d8dbaea04386d55034f044458af9f95f20d7b37a02d9778b3e5"
+          assert j["particion_por_stream_sin_solapamiento"] is True
           assert j["ventanas_test"] > 0 and j["ventanas_train"] > 0
           assert "recall_escenarios_simulados" in m
           assert (Path("resultados")/"escenarios.csv").is_file()
