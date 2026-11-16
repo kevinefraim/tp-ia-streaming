@@ -18,6 +18,10 @@
   "tipo_experimento": "Perturbaciones sintéticas sobre ventanas de audiencia real",
   "semilla": 42,
   "percentil_umbral_train": 95,
+  "semilla_perturbaciones": 59,
+  "perturbacion_factor_mediana_min": 0.8,
+  "perturbacion_factor_mediana_max": 2.2,
+  "perturbacion_piso_espectadores": 30.0,
   "advertencia_sobre_recall": "Es sensibilidad a patrones sintéticos, no recall de viewbotting",
   "nota": "La tasa de alertas en datos reales NO es tasa de falsos positivos: no hay etiquetas de bots."
 }

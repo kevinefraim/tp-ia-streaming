@@ -7,19 +7,23 @@ from __future__ import annotations
 
 import hashlib
 import json
-import warnings
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgba
+from matplotlib.patches import FancyBboxPatch
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / "data" / "origen"
+# Copia del dataset incorporada como submódulo de Git, fijada al mismo commit
+# que SOURCE. Evita republicar el CSV y sirve para trabajar sin Internet.
+SUBMODULE_CSV = ROOT / "data" / "ytlive" / "viewers.csv"
 OUTPUT = ROOT / "resultados"
 FIG = ROOT / "graficos"
 SOURCE = "https://raw.githubusercontent.com/ghalandar/YTLive/a9ce70a470ddfdd52619a4f110bd33a8fcc1d5df/viewers.csv"
@@ -31,6 +35,31 @@ WINDOW = 8                  # 8 mediciones a intervalos ~5 min
 TARGET_STREAMS = 180
 TRAIN_SHARE = .70
 QUANTILE = .95
+# Intensidad de las perturbaciones sintéticas: semilla propia, independiente de
+# la muestra y del modelo, y rango relativo a la mediana de la ventana.
+PERTURB_SEED = SEED + 17
+PERTURB_MIN = .80
+PERTURB_MAX = 2.20
+PERTURB_FLOOR = 30.
+# Nombres de las siete características, en el orden que devuelve features().
+FEATURE_NAMES = ("log_mediana_espectadores", "salto_maximo_arriba",
+                 "salto_maximo_abajo", "rango_relativo", "dispersion_relativa",
+                 "diferencia_inicio_fin", "cambio_neto_relativo")
+METHODS = ("Umbral por salto", "Isolation Forest")
+# Columnas de conteo de metricas.csv: se escriben sin decimales.
+INT_COLUMNS = ("ventanas_reales_sin_etiqueta", "alertas_reales",
+               "escenarios_simulados", "detecciones_simuladas",
+               "aumento_alertas_pares")
+# Etapas del diagrama de pipeline, de los datos públicos a la revisión humana.
+PIPELINE_STAGES = (
+    ("YTLive\nviewers.csv", "C0"),
+    ("Limpieza y ventanas\nde 8 mediciones", "C0"),
+    ("7 características", "C0"),
+    ("Isolation Forest /\nregla por salto", "C1"),
+    ("Umbral p95", "C1"),
+    ("Alerta", "C3"),
+    ("Revisión humana", "C2"),
+)
 
 
 def file_sha256(path: Path) -> str:
@@ -43,11 +72,18 @@ def file_sha256(path: Path) -> str:
 
 
 def download_source() -> Path:
-    """Obtiene una copia local y verifica su integridad contra la fuente fijada."""
+    """Obtiene una copia local y verifica su integridad contra la fuente fijada.
+
+    Orden de preferencia: caché descargada, submódulo `data/ytlive` y, por
+    último, descarga desde el commit fijado. Siempre se exige el mismo
+    SHA-256: una copia que no coincida se ignora en lugar de usarse.
+    """
     CACHE.mkdir(exist_ok=True, parents=True)
     out = CACHE / "viewers.csv"
     if out.is_file() and file_sha256(out) == EXPECTED_SHA256:
         return out
+    if SUBMODULE_CSV.is_file() and file_sha256(SUBMODULE_CSV) == EXPECTED_SHA256:
+        return SUBMODULE_CSV
 
     partial = CACHE / "viewers.csv.part"
     req = Request(SOURCE, headers={"User-Agent": "TP-IA-university-research/1.0"})
@@ -69,17 +105,17 @@ def download_source() -> Path:
 def read_observations(path: Path) -> pd.DataFrame:
     """Leer CSV ancho por bloques para evitar una matriz gigante en memoria."""
     pieces = []
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=FutureWarning, message=".*stack.*")
-        for chunk in pd.read_csv(path, chunksize=384, low_memory=False):
-            # La primera columna puede representar el índice sin encabezado explícito.
-            if "Timestamp" not in chunk:
-                chunk = chunk.rename(columns={chunk.columns[0]: "Timestamp"})
-            chunk["Timestamp"] = pd.to_datetime(chunk["Timestamp"], utc=True, errors="coerce")
-            s = chunk.set_index("Timestamp").stack(dropna=True)
-            s.index.names = ["fecha", "stream_id"]
-            if len(s):
-                pieces.append(s.reset_index(name="espectadores"))
+    for chunk in pd.read_csv(path, chunksize=384, low_memory=False):
+        # La primera columna puede representar el índice sin encabezado explícito.
+        if "Timestamp" not in chunk:
+            chunk = chunk.rename(columns={chunk.columns[0]: "Timestamp"})
+        chunk["Timestamp"] = pd.to_datetime(chunk["Timestamp"], utc=True, errors="coerce")
+        # stack() + dropna() funciona igual en pandas 2.x y 3.x; el argumento
+        # stack(dropna=True) fue retirado y allí levanta ValueError.
+        s = chunk.set_index("Timestamp").stack().dropna()
+        s.index.names = ["fecha", "stream_id"]
+        if len(s):
+            pieces.append(s.reset_index(name="espectadores"))
     if not pieces:
         raise ValueError("No hay observaciones utilizables")
     all_obs = pd.concat(pieces, ignore_index=True)
@@ -138,6 +174,11 @@ def select_windows(obs: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, dict]:
 
 
 def features(windows: np.ndarray) -> np.ndarray:
+    """Convierte cada ventana en las siete características de FEATURE_NAMES.
+
+    Todas las medidas de forma se dividen por la mediana más veinte, para que
+    una ventana muy concurrida y otra pequeña resulten comparables.
+    """
     x = np.asarray(windows, dtype=float)
     median = np.median(x, axis=1)
     scale = median + 20.0
@@ -157,12 +198,13 @@ def features(windows: np.ndarray) -> np.ndarray:
 
 def inject_attacks(real: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Escenarios de laboratorio; no describen ni etiquetan bots verdaderos."""
-    rng = np.random.default_rng(SEED + 17)
+    rng = np.random.default_rng(PERTURB_SEED)
     new = real.copy()
     types = np.array(["escalon", "pulso", "rampa"], dtype=object)
     label = types[np.arange(len(real)) % len(types)]
     for i, (x, kind) in enumerate(zip(new, label)):
-        magnitude = max(float(np.median(real[i])), 30.) * rng.uniform(.8, 2.2)
+        magnitude = (max(float(np.median(real[i])), PERTURB_FLOOR)
+                     * rng.uniform(PERTURB_MIN, PERTURB_MAX))
         if kind == "escalon":
             x[4:] += magnitude
         elif kind == "pulso":
@@ -172,22 +214,48 @@ def inject_attacks(real: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return new, label
 
 
-def report(tr: np.ndarray, real: np.ndarray, injected: np.ndarray,
-           names: np.ndarray) -> tuple[pd.DataFrame, dict, dict]:
+def threshold(train_scores: np.ndarray) -> float:
+    """Umbral de un método: percentil 95 de sus puntuaciones de entrenamiento."""
+    return float(np.quantile(train_scores, QUANTILE))
+
+
+def score_methods(tr: np.ndarray, real: np.ndarray,
+                  injected: np.ndarray) -> dict[str, tuple[np.ndarray, ...]]:
+    """Puntúa con ambos métodos entrenando el bosque una sola vez.
+
+    Devuelve, para cada método, la terna de puntuaciones
+    (entrenamiento, ventanas reales, ventanas perturbadas). Compartir este
+    resultado garantiza que las métricas y el detalle por ventana provengan
+    del mismo modelo y del mismo umbral.
+    """
     train = features(tr)
     fr, fs = features(real), features(injected)
     model = IsolationForest(n_estimators=150, max_samples=min(256, len(tr)),
                             random_state=SEED, n_jobs=1, contamination="auto")
     model.fit(train)
-    scores = {
+    return {
         "Umbral por salto": (train[:, 1], fr[:, 1], fs[:, 1]),
         "Isolation Forest": (-model.score_samples(train),
                             -model.score_samples(fr),
                             -model.score_samples(fs)),
     }
+
+
+def report(tr: np.ndarray, real: np.ndarray, injected: np.ndarray,
+           names: np.ndarray,
+           scores: dict[str, tuple[np.ndarray, ...]] | None = None) -> pd.DataFrame:
+    """Tabla de métricas por método: una fila general y una por escenario.
+
+    Las filas generales informan alertas sobre ventanas reales sin etiquetas,
+    detecciones de perturbaciones sintéticas y alertas nuevas por pares; las
+    filas por escenario desglosan la sensibilidad. Si ya se calcularon las
+    puntuaciones con score_methods() se reutilizan en lugar de reentrenar.
+    """
+    if scores is None:
+        scores = score_methods(tr, real, injected)
     rows = []
     for method, (sc_tr, sc_real, sc_sim) in scores.items():
-        cutoff = float(np.quantile(sc_tr, QUANTILE))
+        cutoff = threshold(sc_tr)
         alert_real = sc_real > cutoff
         alert_sim = sc_sim > cutoff
         rows.append({"metodo": method, "umbral": cutoff,
@@ -207,9 +275,68 @@ def report(tr: np.ndarray, real: np.ndarray, injected: np.ndarray,
     return pd.DataFrame(rows)
 
 
+def window_table(real: np.ndarray, names: np.ndarray,
+                 scores: dict[str, tuple[np.ndarray, ...]]) -> pd.DataFrame:
+    """Detalle por ventana de prueba, sin la serie de espectadores original.
+
+    Una fila por ventana real con sus siete características, el tipo de
+    escenario asignado y, para cada método, el puntaje y la alerta antes y
+    después de aplicar la perturbación sintética. Permite auditar una alerta
+    concreta sin republicar datos de YTLive.
+    """
+    table = pd.DataFrame(features(real), columns=list(FEATURE_NAMES))
+    table.insert(0, "ventana", np.arange(len(real)))
+    table["escenario"] = names
+    for method, short in zip(METHODS, ("salto", "isolation")):
+        sc_tr, sc_real, sc_sim = scores[method]
+        cutoff = threshold(sc_tr)
+        table[f"puntaje_{short}"] = sc_real
+        table[f"alerta_{short}"] = sc_real > cutoff
+        table[f"puntaje_{short}_perturbado"] = sc_sim
+        table[f"alerta_{short}_perturbado"] = sc_sim > cutoff
+    return table
+
+
+def pipeline_figure() -> None:
+    """Diagrama de bloques del recorrido de los datos, de origen a revisión.
+
+    Deja explícito que la salida del sistema es una alerta para revisión
+    humana y no un veredicto automático sobre la transmisión.
+    """
+    box_w, box_h, gap = 1., 1., .38
+    fig, ax = plt.subplots(figsize=(13.5, 2.9))
+    for i, (label, color) in enumerate(PIPELINE_STAGES):
+        left = i * (box_w + gap)
+        ax.add_patch(FancyBboxPatch(
+            (left, 0.), box_w, box_h,
+            boxstyle="round,pad=.02,rounding_size=.09",
+            linewidth=1.6, edgecolor=color, facecolor=to_rgba(color, .18)))
+        ax.text(left + box_w / 2, box_h / 2, label, ha="center", va="center",
+                fontsize=9.5)
+        if i:
+            ax.annotate("", xy=(left - .05, box_h / 2),
+                        xytext=(left - gap + .05, box_h / 2),
+                        arrowprops=dict(arrowstyle="-|>", color=".35",
+                                        linewidth=1.4))
+    ax.set_xlim(-.2, len(PIPELINE_STAGES) * (box_w + gap) - gap + .2)
+    ax.set_ylim(-.3, box_h + .3)
+    ax.set_title("Recorrido del experimento: la salida es una alerta "
+                 "para revisión humana, no un veredicto")
+    ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(FIG / "pipeline.png", dpi=175)
+    plt.close(fig)
+
+
 def plots(real: np.ndarray, simulated: np.ndarray, types: np.ndarray,
           metrics: pd.DataFrame) -> None:
+    """Genera las cuatro figuras del informe en graficos/.
+
+    Produce el diagrama del pipeline, un ejemplo de ventana perturbada, la
+    comparación general entre métodos y la sensibilidad por tipo de escenario.
+    """
     FIG.mkdir(parents=True, exist_ok=True)
+    pipeline_figure()
     # Primer caso escalón por índice predefinido (sin optimizar la elección).
     i = int(np.flatnonzero(types == "escalon")[0])
     fig, ax = plt.subplots(figsize=(9, 4))
@@ -265,20 +392,31 @@ def main() -> None:
     obs = read_observations(path)
     train,test,detail = select_windows(obs)
     injected,kinds = inject_attacks(test)
-    table = report(train, test, injected, kinds)
+    # Un solo ajuste del modelo alimenta las métricas y el detalle por ventana.
+    scores = score_methods(train, test, injected)
+    table = report(train, test, injected, kinds, scores)
+    windows = window_table(test, kinds, scores)
     plots(test, injected, kinds, table)
     OUTPUT.mkdir(parents=True,exist_ok=True)
     summary = table[table["escenario"].isna()].drop(columns=["escenario"])
+    # Las filas por escenario dejan esas columnas vacías y pandas las convierte
+    # a float; los conteos vuelven a entero para no escribir "421.000000".
+    summary = summary.astype({c: "int64" for c in INT_COLUMNS})
     cases = table[table["escenario"].notna()][["metodo", "escenario",
         "escenarios_simulados", "detecciones_simuladas", "recall_escenarios_simulados"]]
     summary.to_csv(OUTPUT/"metricas.csv",index=False,float_format="%.6f")
     cases.to_csv(OUTPUT/"escenarios.csv",index=False,float_format="%.6f")
+    windows.to_csv(OUTPUT/"ventanas_test.csv",index=False,float_format="%.6f")
     detail.update({"dataset":"YTLive, Mozhganfar et al. (2026)",
                    "origen_csv":SOURCE,
                    "sha256_csv":file_sha256(path),
                    "etiquetas_bots_reales":False,
                    "tipo_experimento":"Perturbaciones sintéticas sobre ventanas de audiencia real",
                    "semilla":SEED,"percentil_umbral_train":95,
+                   "semilla_perturbaciones":PERTURB_SEED,
+                   "perturbacion_factor_mediana_min":PERTURB_MIN,
+                   "perturbacion_factor_mediana_max":PERTURB_MAX,
+                   "perturbacion_piso_espectadores":PERTURB_FLOOR,
                    "advertencia_sobre_recall":"Es sensibilidad a patrones sintéticos, no recall de viewbotting",
                    "nota":"La tasa de alertas en datos reales NO es tasa de falsos positivos: no hay etiquetas de bots."})
     (OUTPUT/"resumen.json").write_text(json.dumps(detail,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")

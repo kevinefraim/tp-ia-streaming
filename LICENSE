@@ -1,0 +1,43 @@
+MIT License
+
+Copyright (c) 2026 Integrantes del trabajo práctico integrador de Inteligencia
+Artificial, Universidad de Palermo (ver la sección «Integrantes» del README).
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+ALCANCE DE ESTA LICENCIA
+
+El texto anterior se reproduce en su redacción original en inglés, que es la
+versión reconocida de la licencia MIT.
+
+Esta licencia cubre **solamente el material propio de este repositorio**: el
+código (`main.py`, `tests/`), la configuración de integración continua
+(`.github/`), la documentación (`README.md`) y los resultados derivados que
+publicamos en `resultados/` y `graficos/`.
+
+**No cubre el conjunto de datos YTLive.** YTLive (Mozhganfar et al., NOMS 2026)
+pertenece a sus autores y se encuentra en https://github.com/ghalandar/YTLive.
+Ese repositorio **no declara una licencia de redistribución**, por lo que aquí
+no copiamos ni republicamos su archivo `viewers.csv`: lo incorporamos como
+submódulo de Git en `data/ytlive`, fijado al commit
+`a9ce70a470ddfdd52619a4f110bd33a8fcc1d5df`, que es una referencia al
+repositorio original y no una copia de su contenido. Las condiciones de uso de
+esos datos son las que establezcan sus autores, no las de esta licencia.
