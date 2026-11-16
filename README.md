@@ -4,18 +4,14 @@
 
 ## Integrantes
 
-> Completar antes de la entrega.
+- Kevin Eliel Efraim
+- Joseph Yedidya Abel
 
-| Integrante | Legajo | Correo institucional |
-|---|---|---|
-| _Nombre y apellido_ | _000000_ | _usuario@alumnos.palermo.edu_ |
-| _Nombre y apellido_ | _000000_ | _usuario@alumnos.palermo.edu_ |
-| _Nombre y apellido_ | _000000_ | _usuario@alumnos.palermo.edu_ |
-| _Nombre y apellido_ | _000000_ | _usuario@alumnos.palermo.edu_ |
+**Materia:** Inteligencia Artificial  
+**Universidad:** Universidad de Palermo  
+**Docente:** Ignacio Casais
 
-- **Materia:** Inteligencia Artificial
-- **Docente a cargo:** _Nombre y apellido_
-- **Comisión / cuatrimestre:** _Comisión_ — _cuatrimestre y año_
+Los legajos se incluyen en la portada del trabajo entregado a la universidad. No se publican aquí para evitar exponer identificadores académicos en un repositorio abierto.
 
 ## Pregunta de investigación
 
